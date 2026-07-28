@@ -155,12 +155,16 @@ if __name__ == "__main__":
     tests = load_test_cases()
     print(f"✅ Đã tải thành công {len(tests)} Test Cases từ config/test_cases.json\n")
     
-    # Chạy thử câu test số 3
-    sample_query = tests[2]["question"]
-    
-    print("--- DEMO 1: CHẠY TRÊN CHATBOT BASELINE ---")
-    run_base_line_chatbot(sample_query, provider)
-    
-    print("\n--- DEMO 2: CHẠY TRÊN REACT AGENT ---")
-    react_result = run_react_agent(sample_query, provider)
-    print(f"\n📌 Kết quả ReAct Agent: {react_result['final_answer']}")
+    print("=== CHẠY TẤT CẢ CÁC TEST CASE TỪ test_cases.json ===")
+    for idx, test_case in enumerate(tests, start=1):
+        question = test_case.get("question", "")
+        category = test_case.get("category", "")
+        print(f"\n========== Test Case {idx} [{category}] ==========")
+        print(f"❓ Câu hỏi: {question}")
+
+        print("\n--- DEMO 1: CHẠY TRÊN CHATBOT BASELINE ---")
+        run_base_line_chatbot(question, provider)
+
+        print("\n--- DEMO 2: CHẠY TRÊN REACT AGENT ---")
+        react_result = run_react_agent(question, provider)
+        print(f"\n📌 Kết quả ReAct Agent: {react_result['final_answer']}")
