@@ -43,11 +43,10 @@ def run_baseline_chatbot(user_query: str, provider):
     """
     Dựng Chatbot gốc (Baseline) không có công cụ.
     """
-    print(f"\n💬 [CHATBOT BASELINE] Câu hỏi: {user_query}")
-    
     # Gọi LLM Provider thực hiện sinh câu trả lời
     response = provider.generate(user_query, system_prompt=CHATBOT_BASELINE_PROMPT)
-    print(f"🤖 Chatbot trả lời:\n{response}")
+    print("* **Phản hồi**:")
+    print(response)
     return response
 
 
@@ -61,15 +60,50 @@ def run_react_agent(user_query: str, provider):
     Dựng vòng lặp ReAct Agent (Thought -> Action -> Observation) có Guardrails.
     Agent sẽ phân tích câu hỏi, chọn tool phù hợp, ghi lại từng bước và tổng hợp câu trả lời.
     """
-    print(f"\n🤖 [REACT AGENT] Câu hỏi: {user_query}")
-
-    query_lower = user_query.lower()
     steps = []
-    tool_plan = []
+    max_iterations = MAX_ITERATIONS
+    final_answer = ""
 
-    def extract_student_id(text: str) -> str:
-        match = re.search(r"\b(\d{8})\b", text)
-        return match.group(1) if match else "SV123"
+    def format_action(tool_name: str, tool_args: list[str]) -> str:
+        return f"{tool_name}[{', '.join(tool_args)}]"
+
+    def build_react_prompt() -> str:
+        prompt_parts = [
+            f"Câu hỏi gốc của người dùng: {user_query}",
+            "Lịch sử ReAct cho đến hiện tại:",
+        ]
+        if steps:
+            for idx, step in enumerate(steps, start=1):
+                prompt_parts.extend([
+                    f"Thought {idx}: {step['thought']}",
+                    f"Action {idx}: {step['action']}",
+                    f"Observation {idx}: {step['observation']}",
+                ])
+        else:
+            prompt_parts.append("(Chưa có bước nào.)")
+
+        prompt_parts.extend([
+            "",
+            "Hãy quyết định bước tiếp theo dựa trên toàn bộ lịch sử ở trên.",
+            "Nếu cần thêm dữ liệu, chỉ trả về đúng một bước:",
+            "Thought: <suy luận ngắn gọn>",
+            "Action: tên_công_cụ[tham_số]",
+            "Nếu đã đủ dữ liệu hoặc gặp lỗi không thể tiếp tục an toàn, trả về:",
+            "Thought: Tôi đã có đủ thông tin để trả lời.",
+            "Final Answer: <câu trả lời tự nhiên>",
+            "Không lặp lại Action đã gọi trước đó nếu Observation của Action đó đã có trong lịch sử.",
+        ])
+        return "\n".join(prompt_parts)
+
+    def parse_action(response_text: str):
+        action_line = None
+        for line in response_text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("Action:"):
+                action_line = stripped[len("Action:"):].strip()
+                break
+        if not action_line:
+            return None, None
 
     def extract_course_keyword(text: str) -> str:
         match = re.search(r"\b([A-Za-z]{2,5}\d{3})\b", text)
@@ -82,41 +116,49 @@ def run_react_agent(user_query: str, provider):
     if any(k in query_lower for k in ["tiên quyết", "môn", "catalog", "course", "học máy", "java"]):
         tool_plan.append(("search_course_catalog", [extract_course_keyword(user_query)]))
 
-    if any(k in query_lower for k in ["lịch học", "phòng", "giảng viên", "slot", "còn lại", "thời khóa"]):
-        tool_plan.append(("check_course_schedule", [extract_course_keyword(user_query)]))
+    for step_index in range(1, max_iterations + 1):
+        react_prompt = build_react_prompt()
+        response = provider.generate(react_prompt, system_prompt=REACT_SYSTEM_PROMPT).strip()
 
-    # Nếu không khớp từ khóa nào, dùng tool mặc định để tránh rỗng
-    if not tool_plan:
-        tool_plan.append(("search_course_catalog", ["AI301"]))
+        if "Final Answer:" in response:
+            thought_line = next((line for line in response.splitlines() if line.strip().startswith("Thought:")), "")
+            if thought_line:
+                thought = thought_line.split(":", 1)[1].strip()
+                print(f"* **Thought {step_index}**: {thought}")
+            final_answer = response.split("Final Answer:", 1)[1].strip()
+            break
 
-    for index, (tool_name, tool_args) in enumerate(tool_plan[:MAX_ITERATIONS], start=1):
-        print(f"\n--- 🔄 Vòng lặp ReAct (Step {index}/{MAX_ITERATIONS}) ---")
+        thought_line = next((line for line in response.splitlines() if line.strip().startswith("Thought:")), "")
+        thought = thought_line.split(":", 1)[1].strip() if thought_line else "Không có suy luận rõ ràng"
 
-        if tool_name == "get_student_transcript":
-            thought = "Câu hỏi cần tra cứu dữ liệu điểm số của sinh viên."
-        elif tool_name == "search_course_catalog":
-            thought = "Câu hỏi cần tra cứu thông tin môn học và điều kiện tiên quyết."
-        elif tool_name == "check_course_schedule":
-            thought = "Câu hỏi cần kiểm tra lịch học và phòng học của môn."
+        tool_name, tool_args = parse_action(response)
+        if not tool_name:
+            final_answer = response
+            break
+
+        action = format_action(tool_name, tool_args)
+        if any(step["action"] == action for step in steps):
+            final_answer = (
+                "Tôi đã tra cứu thông tin này nhưng chưa thể tiến thêm bằng một công cụ mới. "
+                "Bạn vui lòng kiểm tra lại yêu cầu hoặc cung cấp thêm thông tin cụ thể hơn."
+            )
+            break
+
+        if tool_name not in AVAILABLE_TOOLS:
+            final_answer = (
+                "Hiện hệ thống chỉ hỗ trợ tra cứu bảng điểm, thông tin môn học và lịch học. "
+                "Tôi không thể thực hiện công cụ hoặc thao tác mà hệ thống không cung cấp."
+            )
+            break
         else:
             thought = "Câu hỏi cần dùng công cụ để thu thập thông tin thực tế."
 
-        print(f"🧠 Thought: {thought}")
-        print(f"🛠️ Action: {tool_name}{tuple(tool_args)}")
-
-        tool_fn = AVAILABLE_TOOLS.get(tool_name)
-        if tool_fn is None:
-            observation = f"[Tool not found] {tool_name}"
-        else:
-            try:
-                observation = tool_fn(*tool_args)
-            except Exception as exc:
-                observation = f"[Tool error] {exc}"
-
-        print(f"👁️ Observation: {observation}")
+        print(f"* **Thought {step_index}**: {thought}")
+        print(f"* **Action {step_index}**: `{action}`")
+        print(f"* **Observation {step_index}**: `{observation}`")
         steps.append({
             "thought": thought,
-            "action": f"{tool_name}{tuple(tool_args)}",
+            "action": action,
             "observation": observation,
         })
 
@@ -139,37 +181,25 @@ def run_react_agent(user_query: str, provider):
     else:
         final_answer = "Hiện tại tôi chưa thu thập đủ dữ liệu để trả lời một cách chắc chắn."
 
-    print(f"🏁 Final Answer: {final_answer}")
+    print(f"* **Final Answer**: *\"{final_answer}\"*")
 
-    if len(tool_plan) >= MAX_ITERATIONS:
-        print(f"🛡️ GUARDRAIL TRIGGERED: Đã đạt giới hạn tối đa {MAX_ITERATIONS} bước. Ngắt lặp an toàn!")
+    if step_index > max_iterations:
+        print(f"🛡️ GUARDRAIL TRIGGERED: Đã đạt giới hạn tối đa {max_iterations} bước. Ngắt lặp an toàn!")
 
     return {"final_answer": final_answer, "steps": steps}
 
 
 if __name__ == "__main__":
-    print("==================================================")
-    print("🏫 ĐẠI HỌC VINUNI - BÀI LAB 3: CHATBOT VS REACT AGENT")
-    print("==================================================")
-    
     # Khởi tạo Multi-Provider LLM Adapter (Đọc từ biến môi trường LLM_PROVIDER)
     provider = get_llm_provider()
-    model_name = getattr(provider, "model_name", "Offline Mock Mode")
-    print(f"🔌 LLM Provider đang hoạt động: {provider.__class__.__name__} (Model: {model_name})")
     
     tests = load_test_cases()
-    print(f"✅ Đã tải thành công {len(tests)} Test Cases từ config/test_cases.json\n")
     
-    print("=== CHẠY TẤT CẢ CÁC TEST CASE TỪ test_cases.json ===")
     for idx, test_case in enumerate(tests, start=1):
         question = test_case.get("question", "")
-        category = test_case.get("category", "")
-        print(f"\n========== Test Case {idx} [{category}] ==========")
-        print(f"❓ Câu hỏi: {question}")
-
-        print("\n--- DEMO 1: CHẠY TRÊN CHATBOT BASELINE ---")
+        print(f"\n**Câu hỏi {idx}**: {question}")
+        print("\n### 🤖 Chatbot Baseline:")
         run_base_line_chatbot(question, provider)
 
-        print("\n--- DEMO 2: CHẠY TRÊN REACT AGENT ---")
-        react_result = run_react_agent(question, provider)
-        print(f"\n📌 Kết quả ReAct Agent: {react_result['final_answer']}")
+        print("### 🧠 ReAct Agent:")
+        run_react_agent(question, provider)
