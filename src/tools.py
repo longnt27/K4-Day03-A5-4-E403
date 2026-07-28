@@ -3,47 +3,92 @@
 Nơi khai báo tất cả các "món đồ nghề" mà ReAct Agent có thể gọi.
 """
 
-def get_weather(location: str) -> str:
-    """
-    Tra cứu thời tiết hiện tại của một thành phố.
-    
-    Args:
-        location (str): Tên thành phố (Ví dụ: 'Hà Nội', 'TP.HCM', 'Đà Nẵng')
-        
-    Returns:
-        str: Thông tin thời tiết chi tiết
-    """
-    loc_lower = location.lower()
-    if "hà nội" in loc_lower or "ha noi" in loc_lower:
-        return "Thời tiết Hà Nội: 28°C, Nắng nhẹ, Độ ẩm 65%."
-    elif "hồ chí minh" in loc_lower or "tp.hcm" in loc_lower or "hcm" in loc_lower:
-        return "Thời tiết TP.HCM: 33°C, Nắng nóng, Có mây."
-    elif "đà nẵng" in loc_lower or "da nang" in loc_lower:
-        return "Thời tiết Đà Nẵng: 30°C, Gió nhẹ, Mát mẻ."
-    else:
-        return f"LỖI: Không tìm thấy dữ liệu thời tiết cho địa điểm '{location}'."
+# Giả lập biến session lưu trữ sinh viên đang đăng nhập hệ thống
+CURRENT_LOGGED_IN_USER = "SV123"
 
 
-def search_flights(origin: str, destination: str) -> str:
+def get_student_transcript(target_student_id: str) -> str:
     """
-    Tra cứu chuyến bay giữa hai địa điểm.
-    
+    Tra cứu bảng điểm sinh viên, GPA, danh sách các môn đã đỗ/nợ.
+    LƯU Ý BẢO MẬT: Một sinh viên chỉ được phép tra cứu thông tin của chính mình.
+
     Args:
-        origin (str): Nơi đi (Ví dụ: 'TP.HCM')
-        destination (str): Nơi đến (Ví dụ: 'Hà Nội')
-        
+        target_student_id (str): Mã sinh viên cần tra cứu (Ví dụ: 'SV123').
+
     Returns:
-        str: Danh sách chuyến bay khả dụng và giá vé
+        str: Thông tin điểm số hoặc chuỗi báo lỗi từ chối quyền truy cập/không tìm thấy.
     """
-    return (
-        f"Chuyến bay từ {origin} -> {destination} ngày mai:\n"
-        f"1. VN123 (08:00) - Giá: 1,500,000 VNĐ (Còn vé)\n"
-        f"2. VJ456 (14:30) - Giá: 1,200,000 VNĐ (Còn vé)"
+    target_id = target_student_id.upper().strip()
+
+    # Cơ chế kiểm tra quyền truy cập (Authorization)
+    if target_id != CURRENT_LOGGED_IN_USER:
+        return f"LỖI TỪ CHỐI TRUY CẬP: Hệ thống ghi nhận bạn là {CURRENT_LOGGED_IN_USER}. Bạn không có quyền xem bảng điểm của {target_id}."
+
+    db = {
+        "SV123": "GPA: 3.2, Đã đỗ: Hệ quản trị cơ sở dữ liệu, Nhập môn Python, Cấu trúc dữ liệu. Nợ: Không.",
+        "SV456": "GPA: 2.8, Đã đỗ: Kỹ năng mềm. Nợ: Giải tích.",
+    }
+
+    return db.get(
+        target_id, f"LỖI: Không tìm thấy dữ liệu cho mã sinh viên '{target_id}'."
     )
+
+
+def search_course_catalog(keyword: str) -> str:
+    """
+    Tra cứu chương trình học, số tín chỉ, yêu cầu môn tiên quyết.
+
+    Args:
+        keyword (str): Mã môn hoặc tên môn (Ví dụ: 'IS201', 'Java', 'Machine Learning').
+
+    Returns:
+        str: Thông tin chi tiết của môn học hoặc chuỗi báo lỗi nếu không tìm thấy.
+    """
+    keyword_lower = keyword.lower().strip()
+
+    if (
+        "is201" in keyword_lower
+        or "cơ sở dữ liệu" in keyword_lower
+        or "sql" in keyword_lower
+    ):
+        return "Môn: Hệ quản trị cơ sở dữ liệu (IS201) - 3 tín chỉ. Tiên quyết: Không. Nội dung: SQL Server, MySQL, ETL pipelines."
+    elif (
+        "ds301" in keyword_lower
+        or "machine learning" in keyword_lower
+        or "học máy" in keyword_lower
+    ):
+        return "Môn: Học máy (DS301) - 4 tín chỉ. Tiên quyết: Xác suất thống kê, Nhập môn Python. Nội dung: Hồi quy, Phân loại, đánh giá model (AUC/ROC)."
+    elif "it401" in keyword_lower or "java" in keyword_lower:
+        return "Môn: Lập trình Java Ứng dụng (IT401) - 3 tín chỉ. Tiên quyết: Lập trình hướng đối tượng. Nội dung: Java Core, thiết kế Web App, quản lý kho."
+    else:
+        return f"LỖI: Không tìm thấy môn học nào khớp với từ khóa '{keyword}' trong hệ thống đào tạo."
+
+
+def check_course_schedule(course_code: str) -> str:
+    """
+    Kiểm tra lịch học, phòng học, giảng viên và số slot còn trống của lớp học phần.
+
+    Args:
+        course_code (str): Mã môn học (Ví dụ: 'IS201', 'DS301').
+
+    Returns:
+        str: Thông tin lịch học chi tiết hoặc chuỗi báo lỗi.
+    """
+    code_upper = course_code.upper().strip()
+
+    if code_upper == "IS201":
+        return "Lớp IS201-01: Sáng T3 (08:00 - 11:30), Phòng E402. Giảng viên: Trần Văn A. Số slot còn trống: 5/40."
+    elif code_upper == "DS301":
+        return "Lớp DS301-02: Chiều T5 (13:30 - 17:00), Phòng Lab. Giảng viên: Nguyễn Thị B. Số slot còn trống: 0/30 (Đã đầy)."
+    elif code_upper == "IT401":
+        return "Lớp IT401-01: Sáng T2 (08:00 - 11:30), Phòng E403. Giảng viên: Lê Văn C. Số slot còn trống: 12/40."
+    else:
+        return f"LỖI: Không có lịch học nào được xếp cho mã môn '{code_upper}' trong học kỳ này."
 
 
 # Danh sách các tool được đăng ký để Agent sử dụng
 AVAILABLE_TOOLS = {
-    "get_weather": get_weather,
-    "search_flights": search_flights,
+    "get_student_transcript": get_student_transcript,
+    "search_course_catalog": search_course_catalog,
+    "check_course_schedule": check_course_schedule,
 }
