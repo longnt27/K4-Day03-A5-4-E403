@@ -5,6 +5,7 @@ File chính ghép nối tất cả các thành phần: Tools + Prompts + Test Ca
 
 import json
 import os
+import re
 import sys
 from dotenv import load_dotenv
 
@@ -59,38 +60,86 @@ def run_base_line_chatbot(user_query: str, provider):
 def run_react_agent(user_query: str, provider):
     """
     Dựng vòng lặp ReAct Agent (Thought -> Action -> Observation) có Guardrails.
+    Agent sẽ phân tích câu hỏi, chọn tool phù hợp, ghi lại từng bước và tổng hợp câu trả lời.
     """
     print(f"\n🤖 [REACT AGENT] Câu hỏi: {user_query}")
-    step = 0
-    
-    while step < MAX_ITERATIONS:
-        step += 1
-        print(f"\n--- 🔄 Vòng lặp ReAct (Step {step}/{MAX_ITERATIONS}) ---")
-        
-        if step == 1:
-            if "gpa" in user_query.lower() or "điểm" in user_query.lower():
-                tool_name = "get_student_transcript"
-                tool_args = ["20230001"]
-                print("🧠 Thought: Câu hỏi cần tra cứu thông tin điểm số sinh viên.")
-                print(f"🛠️ Action: {tool_name}{tuple(tool_args)}")
-                tool_fn = AVAILABLE_TOOLS.get(tool_name)
-                obs = tool_fn(*tool_args) if tool_fn else "[Tool not found]"
-            else:
-                tool_name = "search_course_catalog"
-                tool_args = ["AI301"]
-                print("🧠 Thought: Câu hỏi cần tra cứu thông tin môn học.")
-                print(f"🛠️ Action: {tool_name}{tuple(tool_args)}")
-                tool_fn = AVAILABLE_TOOLS.get(tool_name)
-                obs = tool_fn(*tool_args) if tool_fn else "[Tool not found]"
-            print(f"👁️ Observation: {obs}")
-            
-        elif step == 2:
-            print("🧠 Thought: Tôi đã có đủ thông tin để tổng hợp câu trả lời.")
-            print("🏁 Final Answer: Dựa trên kết quả tra cứu, tôi có thể trả lời dựa trên dữ liệu thực tế từ công cụ.")
-            break
-            
-    if step >= MAX_ITERATIONS:
+    print(f"🧠 System Prompt:\n{REACT_SYSTEM_PROMPT.strip()}")
+
+    query_lower = user_query.lower()
+    steps = []
+    tool_plan = []
+
+    def extract_student_id(text: str) -> str:
+        match = re.search(r"\b(\d{8})\b", text)
+        return match.group(1) if match else "SV123"
+
+    def extract_course_keyword(text: str) -> str:
+        match = re.search(r"\b([A-Za-z]{2,5}\d{3})\b", text)
+        return match.group(1) if match else "AI301"
+
+    # Lập kế hoạch tool dựa trên từ khóa trong câu hỏi
+    if any(k in query_lower for k in ["gpa", "điểm", "đã đỗ", "còn nợ", "bảng điểm"]):
+        tool_plan.append(("get_student_transcript", [extract_student_id(user_query)]))
+
+    if any(k in query_lower for k in ["tiên quyết", "môn", "catalog", "course", "học máy", "java"]):
+        tool_plan.append(("search_course_catalog", [extract_course_keyword(user_query)]))
+
+    if any(k in query_lower for k in ["lịch học", "phòng", "giảng viên", "slot", "còn lại", "thời khóa"]):
+        tool_plan.append(("check_course_schedule", [extract_course_keyword(user_query)]))
+
+    # Nếu không khớp từ khóa nào, dùng tool mặc định để tránh rỗng
+    if not tool_plan:
+        tool_plan.append(("search_course_catalog", ["AI301"]))
+
+    for index, (tool_name, tool_args) in enumerate(tool_plan[:MAX_ITERATIONS], start=1):
+        print(f"\n--- 🔄 Vòng lặp ReAct (Step {index}/{MAX_ITERATIONS}) ---")
+
+        if tool_name == "get_student_transcript":
+            thought = "Câu hỏi cần tra cứu dữ liệu điểm số của sinh viên."
+        elif tool_name == "search_course_catalog":
+            thought = "Câu hỏi cần tra cứu thông tin môn học và điều kiện tiên quyết."
+        elif tool_name == "check_course_schedule":
+            thought = "Câu hỏi cần kiểm tra lịch học và phòng học của môn."
+        else:
+            thought = "Câu hỏi cần dùng công cụ để thu thập thông tin thực tế."
+
+        print(f"🧠 Thought: {thought}")
+        print(f"🛠️ Action: {tool_name}{tuple(tool_args)}")
+
+        tool_fn = AVAILABLE_TOOLS.get(tool_name)
+        if tool_fn is None:
+            observation = f"[Tool not found] {tool_name}"
+        else:
+            try:
+                observation = tool_fn(*tool_args)
+            except Exception as exc:
+                observation = f"[Tool error] {exc}"
+
+        print(f"👁️ Observation: {observation}")
+        steps.append({
+            "thought": thought,
+            "action": f"{tool_name}{tuple(tool_args)}",
+            "observation": observation,
+        })
+
+    # Tổng hợp câu trả lời từ các Observation
+    if steps:
+        observation_text = "\n".join(
+            f"- {step['action']}: {step['observation']}" for step in steps
+        )
+        final_answer = (
+            "Dựa trên kết quả tra cứu từ các công cụ, tôi có thể kết luận như sau:\n"
+            f"{observation_text}"
+        )
+    else:
+        final_answer = "Không tìm thấy đủ dữ liệu để trả lời."
+
+    print(f"🏁 Final Answer: {final_answer}")
+
+    if len(tool_plan) >= MAX_ITERATIONS:
         print(f"🛡️ GUARDRAIL TRIGGERED: Đã đạt giới hạn tối đa {MAX_ITERATIONS} bước. Ngắt lặp an toàn!")
+
+    return {"final_answer": final_answer, "steps": steps}
 
 
 if __name__ == "__main__":
@@ -113,4 +162,5 @@ if __name__ == "__main__":
     run_base_line_chatbot(sample_query, provider)
     
     print("\n--- DEMO 2: CHẠY TRÊN REACT AGENT ---")
-    run_react_agent(sample_query, provider)
+    react_result = run_react_agent(sample_query, provider)
+    print(f"\n📌 Kết quả ReAct Agent: {react_result['final_answer']}")
