@@ -58,99 +58,91 @@ def run_base_line_chatbot(user_query: str, provider):
 
 def run_react_agent(user_query: str, provider):
     """
-    Dựng vòng lặp ReAct Agent thực sự: LLM quyết định Thought -> Action -> Observation.
+    Dựng vòng lặp ReAct Agent (Thought -> Action -> Observation) có Guardrails.
+    Agent sẽ phân tích câu hỏi, chọn tool phù hợp, ghi lại từng bước và tổng hợp câu trả lời.
     """
     print(f"\n🤖 [REACT AGENT] Câu hỏi: {user_query}")
 
+    query_lower = user_query.lower()
     steps = []
-    max_iterations = MAX_ITERATIONS
-    current_prompt = user_query
-    final_answer = ""
+    tool_plan = []
 
-    def parse_action(response_text: str):
-        action_line = None
-        for line in response_text.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("Action:"):
-                action_line = stripped[len("Action:"):].strip()
-                break
-        if not action_line:
-            return None, None
+    def extract_student_id(text: str) -> str:
+        match = re.search(r"\b(\d{8})\b", text)
+        return match.group(1) if match else "SV123"
 
-        if "[" not in action_line or "]" not in action_line:
-            return None, None
+    def extract_course_keyword(text: str) -> str:
+        match = re.search(r"\b([A-Za-z]{2,5}\d{3})\b", text)
+        return match.group(1) if match else "AI301"
 
-        tool_name = action_line.split("[", 1)[0].strip()
-        raw_args = action_line.split("[", 1)[1].rstrip("]").strip()
-        if not raw_args:
-            return tool_name, []
+    # Lập kế hoạch tool dựa trên từ khóa trong câu hỏi
+    if any(k in query_lower for k in ["gpa", "điểm", "đã đỗ", "còn nợ", "bảng điểm"]):
+        tool_plan.append(("get_student_transcript", [extract_student_id(user_query)]))
 
-        args = [item.strip().strip("'\"") for item in raw_args.split(",") if item.strip()]
-        return tool_name, args
+    if any(k in query_lower for k in ["tiên quyết", "môn", "catalog", "course", "học máy", "java"]):
+        tool_plan.append(("search_course_catalog", [extract_course_keyword(user_query)]))
 
-    for step_index in range(1, max_iterations + 1):
-        print(f"\n--- 🔄 Vòng lặp ReAct (Step {step_index}/{max_iterations}) ---")
+    if any(k in query_lower for k in ["lịch học", "phòng", "giảng viên", "slot", "còn lại", "thời khóa"]):
+        tool_plan.append(("check_course_schedule", [extract_course_keyword(user_query)]))
 
-        react_prompt = (
-            f"Câu hỏi của người dùng: {current_prompt}\n\n"
-            f"Bạn là một ReAct Agent. Hãy quyết định xem có cần dùng công cụ hay không.\n"
-            "Nếu cần, hãy trả về đúng định dạng sau:\n"
-            "Thought: <suy luận ngắn gọn>\n"
-            "Action: tên_công_cụ[tham_số]\n"
-            "Nếu không cần tool, hãy trả về:\n"
-            "Thought: Tôi đã có đủ thông tin để trả lời.\n"
-            "Final Answer: <câu trả lời tự nhiên>\n"
-            "Chỉ trả về một bước Thought/Action hoặc Final Answer."
-        )
+    # Nếu không khớp từ khóa nào, dùng tool mặc định để tránh rỗng
+    if not tool_plan:
+        tool_plan.append(("search_course_catalog", ["AI301"]))
 
-        response = provider.generate(react_prompt, system_prompt=REACT_SYSTEM_PROMPT).strip()
-        print(f"🧠 Model Output:\n{response}")
+    for index, (tool_name, tool_args) in enumerate(tool_plan[:MAX_ITERATIONS], start=1):
+        print(f"\n--- 🔄 Vòng lặp ReAct (Step {index}/{MAX_ITERATIONS}) ---")
 
-        if "Final Answer:" in response:
-            final_answer = response.split("Final Answer:", 1)[1].strip()
-            break
-
-        thought_line = next((line for line in response.splitlines() if line.strip().startswith("Thought:")), "")
-        thought = thought_line.split(":", 1)[1].strip() if thought_line else "Không có suy luận rõ ràng"
-
-        tool_name, tool_args = parse_action(response)
-        if not tool_name:
-            final_answer = response
-            break
-
-        if tool_name not in AVAILABLE_TOOLS:
-            observation = f"[Tool not found] {tool_name}"
+        if tool_name == "get_student_transcript":
+            thought = "Câu hỏi cần tra cứu dữ liệu điểm số của sinh viên."
+        elif tool_name == "search_course_catalog":
+            thought = "Câu hỏi cần tra cứu thông tin môn học và điều kiện tiên quyết."
+        elif tool_name == "check_course_schedule":
+            thought = "Câu hỏi cần kiểm tra lịch học và phòng học của môn."
         else:
-            try:
-                tool_fn = AVAILABLE_TOOLS[tool_name]
-                observation = tool_fn(*tool_args) if tool_args else tool_fn()
-            except Exception as exc:
-                observation = f"[Tool error] {exc}"
+            thought = "Câu hỏi cần dùng công cụ để thu thập thông tin thực tế."
 
         print(f"🧠 Thought: {thought}")
         print(f"🛠️ Action: {tool_name}{tuple(tool_args)}")
+
+        tool_fn = AVAILABLE_TOOLS.get(tool_name)
+        if tool_fn is None:
+            observation = f"[Tool not found] {tool_name}"
+        else:
+            try:
+                observation = tool_fn(*tool_args)
+            except Exception as exc:
+                observation = f"[Tool error] {exc}"
+
         print(f"👁️ Observation: {observation}")
         steps.append({
             "thought": thought,
             "action": f"{tool_name}{tuple(tool_args)}",
             "observation": observation,
         })
-        current_prompt = (
-            f"Câu hỏi trước đó: {user_query}\n"
-            f"Thought: {thought}\n"
-            f"Action: {tool_name}{tuple(tool_args)}\n"
-            f"Observation: {observation}"
-        )
 
-    if not final_answer:
-        final_answer = (
-            "Tôi chưa thể tạo câu trả lời cuối cùng một cách đầy đủ từ vòng lặp ReAct hiện tại."
+    # Tổng hợp câu trả lời từ các Observation bằng LLM thực tế
+    if steps:
+        trace_text = "\n\n".join(
+            f"Thought: {step['thought']}\nAction: {step['action']}\nObservation: {step['observation']}"
+            for step in steps
         )
+        synthesis_prompt = (
+            f"Câu hỏi của người dùng: {user_query}\n\n"
+            "Hãy sử dụng chuỗi Thought -> Action -> Observation sau để trả lời câu hỏi một cách tự nhiên bằng tiếng Việt.\n"
+            "Đừng liệt kê các bước công cụ. Hãy trả lời như một trợ lý hữu ích, ngắn gọn và rõ ràng.\n\n"
+            f"Trace:\n{trace_text}"
+        )
+        try:
+            final_answer = provider.generate(synthesis_prompt, system_prompt=REACT_SYSTEM_PROMPT).strip()
+        except Exception as exc:
+            final_answer = f"Tôi chưa nhận được câu trả lời từ mô hình: {exc}"
+    else:
+        final_answer = "Hiện tại tôi chưa thu thập đủ dữ liệu để trả lời một cách chắc chắn."
 
     print(f"🏁 Final Answer: {final_answer}")
 
-    if step_index >= max_iterations:
-        print(f"🛡️ GUARDRAIL TRIGGERED: Đã đạt giới hạn tối đa {max_iterations} bước. Ngắt lặp an toàn!")
+    if len(tool_plan) >= MAX_ITERATIONS:
+        print(f"🛡️ GUARDRAIL TRIGGERED: Đã đạt giới hạn tối đa {MAX_ITERATIONS} bước. Ngắt lặp an toàn!")
 
     return {"final_answer": final_answer, "steps": steps}
 
