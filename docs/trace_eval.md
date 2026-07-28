@@ -19,10 +19,24 @@
 
 ## 🔍 2. SO SÁNH PHẢN HỒI (TEST CASE #3)
 
-**Câu hỏi**: *"Thời tiết ở Hà Nội hôm nay thế nào và tôi nên mặc gì đi chơi?"*
+**Câu hỏi**: Kiểm tra GPA, các môn đã đỗ và các môn còn nợ của sinh viên 20230001.
 
 ### 🤖 Chatbot Baseline:
-* **Phản hồi**: *"Tôi không có truy cập Internet thời gian thực nên không biết thời tiết hôm nay ở Hà Nội."*
+* **Phản hồi**: 
+
+Chào bạn,
+
+Với vai trò là Trợ lý tư vấn học tập, mình rất muốn hỗ trợ bạn tra cứu thông tin này. Tuy nhiên, như đã lưu ý, **mình không có kết nối với hệ thống quản lý đào tạo thời gian thực và không có quyền truy cập vào cơ sở dữ liệu cá nhân của sinh viên**. 
+
+Vì vậy, mình không thể kiểm tra điểm GPA, các môn đã đỗ hay các môn còn nợ của mã số sinh viên `20230001`.
+
+Để tra cứu các thông tin này một cách chính xác và bảo mật nhất, bạn vui lòng thực hiện theo hướng dẫn sau:
+1. **Truy cập vào Portal/Cổng thông tin sinh viên** của trường bạn đang theo học.
+2. Đăng nhập tài khoản cá nhân và vào mục **Bảng điểm/Kết quả học tập** để kiểm tra điểm GPA và danh sách các môn đã đạt.
+3. Đối chiếu với **Khung chương trình đào tạo** của khóa học (thường có sẵn trên Portal hoặc website của Phòng Đào tạo) để biết mình còn nợ những học phần nào chưa hoàn thành.
+
+Nếu bạn có thắc mắc về quy chế tính điểm GPA, điều kiện đăng ký tín chỉ, hay các quy định học tập chung khác, mình rất sẵn lòng giải đáp giúp bạn!
+
 * **Nhận xét**: An toàn nhưng không giải quyết được nhu cầu thực tế của người dùng.
 
 ### 🧠 ReAct Agent:
