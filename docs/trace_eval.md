@@ -1,17 +1,19 @@
 # 📊 BÁO CÁO GIÁM SÁT & ĐÁNH GIÁ (OBSERVABILITY TRACE LOGS)
 *Dành cho Role 5: Observability & Reviewer*
 
+
 ---
 
 ## 🎯 1. BẢNG CHẤM ĐIỂM AGENTIC FIT (SCORING MATRIX)
 
 | Tiêu chí | Điểm (1-5) | Lý do đánh giá |
 | :--- | :---: | :--- |
-| 🧠 **Multi-step Reasoning** | `4/5` | Cần suy luận từ tra cứu thời tiết đến chọn trang phục. |
-| 🛠️ **Tool Interaction** | `5/5` | Cần tra cứu dữ liệu thời gian thực qua API thời tiết/chuyến bay. |
-| 🔀 **Dynamic Decision** | `4/5` | Kết quả bước trước quyết định hành động bước sau. |
-| ⏳ **Long Horizon** | `3/5` | Quy trình gồm 2-3 bước xử lý ngắn. |
-| **TỔNG ĐIỂM FIT** | **16/20** | **KẾT LUẬN: BÀI TOÁN RẤT NÊN DÙNG REACT AGENT!** |
+| 🧠 **Multi-step Reasoning** | `4/5` | Cần suy luận logic từ kiểm tra môn tiên quyết ➔ Check trùng lịch ➔ Đề xuất lộ trình học. |
+| 🛠️ **Tool Interaction** | `5/5` | Bắt buộc phải tương tác với DB thời gian thực để tra bảng điểm, lịch học và số chỗ còn trống. |
+| 🔀 **Dynamic Decision** | `5/5` | Kết quả bước trước (VD: môn A hết chỗ hoặc bị trùng lịch) quyết định trực tiếp hành động đề xuất môn B ở bước sau. |
+| ⏳ **Long Horizon** | `3/5` | Quy trình gồm 3–4 bước xử lý liên tiếp. |
+| **TỔNG ĐIỂM FIT** | **17/20** | **KẾT LUẬN: BÀI TOÁN CỰC KỲ PHÙ HỢP CHO REACT AGENT!** |
+
 
 ---
 
